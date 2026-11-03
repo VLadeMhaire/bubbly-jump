@@ -600,7 +600,7 @@
 
   var GRAV = 0.5, JUMP = -13.5, SPRING = -22, MOVE = 5.2;
   var keys = {}, touchSide = 0, touchV = 0;
-  var BOOST = 1.32, boostBuf = 0, swipeY0 = null; // high jump: hold Shift / swipe up
+  var BOOST = 1.32, boostBuf = 0, swipeY0 = null, drag = null; // drag = touch follow-the-finger control // high jump: hold Shift / swipe up
   var sceneCur = 0, scenePrev = -1, sceneFade = 1, toast = null;
   var items = [], pops = [], coins = 0, totalCoins = 0, shield = 0, sinceGold = 0, combo = 0, comboT = 0;
   var SHIELD_FRAMES = 600;
@@ -712,6 +712,10 @@
       if (keys.right || touchSide > 0) dir += 1;
     }
     var target = dir * MOVE;
+    if (drag && state === 'play') {
+      target = clamp((drag.px + drag.cx - drag.ax - player.x) * 0.3, -MOVE * 2.2, MOVE * 2.2);
+      dir = target > 0.6 ? 1 : target < -0.6 ? -1 : 0;
+    }
     player.vx += (target - player.vx) * 0.22;
     if (dir) player.face = dir;
 
@@ -729,8 +733,8 @@
       }
     }
     player.x += player.vx;
-    if (player.x < -player.w / 2) player.x = W + player.w / 2;
-    if (player.x > W + player.w / 2) player.x = -player.w / 2;
+    if (player.x < -player.w / 2) { player.x = W + player.w / 2; if (drag) drag.px += W + player.w; }
+    if (player.x > W + player.w / 2) { player.x = -player.w / 2; if (drag) drag.px -= W + player.w; }
     player.vy += GRAV;
     player.y += player.vy;
     var feet = player.y + player.h;
@@ -1997,7 +2001,7 @@
       ctx.translate(W / 2, 260); ctx.scale(pop, pop);
       bubbleText(K.name + '!', 0, 0, 38, K.col, '#b0496f');
       bubbleText(K.tip, 0, 44, 16, '#4dabf7', '#2b84cf');
-      if (r.h) bubbleText('Steer: up / down keys (W S) or tap top / bottom', 0, 72, 14, '#ff6fae', '#d9498a');
+      if (r.h) bubbleText('Steer: up / down keys (W S) or drag finger up / down', 0, 72, 14, '#ff6fae', '#d9498a');
       ctx.restore();
     }
     if (r.t >= RIDE_DUR) {
@@ -2162,7 +2166,7 @@
     ctx.fillStyle = '#c0508a';
     ctx.font = '600 15px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('Move: ← → or A D', W / 2, 462);
-    ctx.fillText('Phone: hold left / right side', W / 2, 484);
+    ctx.fillText('Phone: drag your finger to move', W / 2, 484);
     ctx.fillText('Fall off the bottom = game over!', W / 2, 506);
     ctx.fillText('Coins, golden bubbles & bonus rides!', W / 2, 528);
     ctx.fillText('Higher jump: hold SHIFT / swipe up', W / 2, 550);
@@ -2284,18 +2288,31 @@
     if (state === 'start' && inRect(lp, MENU_SHOP.start)) { openShop(); return; }
     if (state === 'over' && performance.now() - overAt > 600 && inRect(lp, MENU_SHOP.over)) { openShop(); return; }
     action();
-    touchSide = sideFromEvent(e); touchV = vertFromEvent(e);
     swipeY0 = e.clientY;
+    if (e.pointerType !== 'mouse' && state === 'play') {
+      // touch: finger drags the character; vertical drag steers rides, swipe up = high jump
+      drag = { ax: lp.x, ay: lp.y, cx: lp.x, px: player.x, rax: lp.x, ray: lp.y };
+    } else { touchSide = sideFromEvent(e); touchV = vertFromEvent(e); }
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
   });
   canvas.addEventListener('pointermove', function (e) {
-    if (touchSide !== 0) { touchSide = sideFromEvent(e); touchV = vertFromEvent(e); }
+    if (drag) {
+      var q = logicalPt(e); drag.cx = q.x;
+      // for rides: direction from a drifting anchor so reversing is instant
+      var ddx = q.x - drag.rax, ddy = q.y - drag.ray, LIM = 36;
+      if (ddx > LIM) drag.rax = q.x - LIM; else if (ddx < -LIM) drag.rax = q.x + LIM;
+      if (ddy > LIM) drag.ray = q.y - LIM; else if (ddy < -LIM) drag.ray = q.y + LIM;
+      ddx = q.x - drag.rax; ddy = q.y - drag.ray;
+      touchSide = ddx > 8 ? 1 : ddx < -8 ? -1 : 0;
+      touchV = ddy > 8 ? 1 : ddy < -8 ? -1 : 0;
+    } else if (touchSide !== 0) { touchSide = sideFromEvent(e); touchV = vertFromEvent(e); }
+    if (swipeY0 !== null && e.clientY > swipeY0) swipeY0 = e.clientY;
     if (swipeY0 !== null && state === 'play' && swipeY0 - e.clientY > 28) { boostBuf = 50; swipeY0 = e.clientY; }
   });
-  function release() { touchSide = 0; touchV = 0; swipeY0 = null; }
+  function release() { touchSide = 0; touchV = 0; swipeY0 = null; drag = null; }
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
-  window.addEventListener('blur', function () { keys = {}; touchSide = 0; touchV = 0; swipeY0 = null; boostBuf = 0; });
+  window.addEventListener('blur', function () { keys = {}; touchSide = 0; touchV = 0; swipeY0 = null; boostBuf = 0; drag = null; });
 
   // ---------- loop ----------
   var last = performance.now(), acc = 0, STEP = 1000 / 60;

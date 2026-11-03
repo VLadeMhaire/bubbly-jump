@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bubbly Jump Stats</title>
+<style>
+  :root {
+    --bg: #fff7fb; --card: #ffffff; --ink: #2b2140; --muted: #7b7192; --line: #f0e3ee;
+    --accent: #ff6fae; --accent2: #5cb8ff; --track: #fde6f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1c1626; --card: #271f35; --ink: #f4eefc; --muted: #a99bc2; --line: #3a3050; --track: #3a2c47; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 24px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 20px 0; }
+  .tile, .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .tile .n { font-size: 32px; font-weight: 700; color: var(--accent); }
+  .tile .l { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .card { margin-bottom: 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-size: 12px; color: var(--muted); }
+  .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; }
+  .barwrap { width: 120px; background: var(--track); border-radius: 4px; display: inline-block; }
+  .days { display: flex; align-items: flex-end; gap: 6px; height: 140px; }
+  .day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .day .col { width: 100%; max-width: 36px; background: var(--accent2); border-radius: 5px 5px 0 0; min-height: 2px; }
+  .day .v { font-size: 11px; color: var(--muted); }
+  .day .d { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .err { color: #d63a5b; }
+  button { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Bubbly Jump stats</h1>
+    <div class="sub"><span id="updated">Loading…</span> <button id="refresh" type="button">Refresh</button></div>
+  </header>
+
+  <section class="tiles">
+    <div class="tile"><div class="n" id="t-devices">–</div><div class="l">Devices seen</div></div>
+    <div class="tile"><div class="n" id="t-players">–</div><div class="l">Devices that played</div></div>
+    <div class="tile"><div class="n" id="t-plays">–</div><div class="l">Total plays</div></div>
+    <div class="tile"><div class="n" id="t-avg">–</div><div class="l">Avg plays per player</div></div>
+  </section>
+
+  <section class="card">
+    <h2>Plays per day (last 14 days)</h2>
+    <div id="days" class="days"></div>
+  </section>
+
+  <section class="card">
+    <h2>Plays per device</h2>
+    <table>
+      <thead><tr>
+        <th>Device</th><th>Type</th><th class="num">Plays</th><th>Frequency</th>
+        <th class="num">Visits</th><th class="num">Best (m)</th><th>Last played</th><th>First seen</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="msg" class="empty"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var token = new URLSearchParams(location.search).get('token');
+  var $ = function (id) { return document.getElementById(id); };
+
+  function deviceType(ua) {
+    ua = ua || '';
+    var os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' :
+             /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Unknown';
+    var br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' :
+             /Chrome\/|CriOS/.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+    return br ? os + ' · ' + br : os;
+  }
+  function fmt(ts) { return ts ? new Date(ts * 1000).toLocaleString() : '–'; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function render(d) {
+    $('t-devices').textContent = d.total_devices;
+    $('t-players').textContent = d.devices_who_played;
+    $('t-plays').textContent = d.total_plays;
+    $('t-avg').textContent = d.devices_who_played ? (d.total_plays / d.devices_who_played).toFixed(1) : '0';
+
+    var maxPlays = Math.max.apply(null, [1].concat(d.devices.map(function (x) { return x.plays || 0; })));
+    $('rows').innerHTML = d.devices.map(function (x) {
+      var pct = Math.round(100 * (x.plays || 0) / maxPlays);
+      return '<tr><td><code title="' + esc(x.id) + '">' + esc(x.id.slice(0, 8)) + '</code></td>' +
+        '<td>' + esc(deviceType(x.user_agent)) + '</td>' +
+        '<td class="num"><b>' + (x.plays || 0) + '</b></td>' +
+        '<td><span class="barwrap"><span class="bar" style="width:' + pct + '%"></span></span></td>' +
+        '<td class="num">' + (x.visits || 0) + '</td>' +
+        '<td class="num">' + (x.best_score == null ? '–' : x.best_score) + '</td>' +
+        '<td>' + fmt(x.last_played) + '</td><td>' + fmt(x.first_seen) + '</td></tr>';
+    }).join('');
+    $('msg').textContent = d.devices.length ? '' : 'No devices yet. Play the game and refresh.';
+
+    var maxDay = Math.max.apply(null, [1].concat(d.daily.map(function (x) { return x.plays || 0; })));
+    $('days').innerHTML = d.daily.length ? d.daily.map(function (x) {
+      var h = Math.round(100 * (x.plays || 0) / maxDay);
+      return '<div class="day" title="' + esc(x.day) + ': ' + x.plays + ' plays, ' + x.devices + ' devices">' +
+        '<div class="v">' + (x.plays || 0) + '</div><div class="col" style="height:' + h + '%"></div>' +
+        '<div class="d">' + esc(x.day.slice(5)) + '</div></div>';
+    }).join('') : '<div class="empty">No plays yet.</div>';
+    $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  function load() {
+    var url = '/api/stats' + (token ? '?token=' + encodeURIComponent(token) : '');
+    fetch(url).then(function (r) {
+      if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized: add ?token=YOUR_TOKEN to the URL' : 'HTTP ' + r.status);
+      return r.json();
+    }).then(render).catch(function (e) {
+      $('updated').textContent = ''; $('msg').innerHTML = '<span class="err">' + esc(e.message) + '</span>';
+    });
+  }
+  $('refresh').onclick = load;
+  load(); setInterval(load, 15000);
+})();
+</script>
+</body>
+</html>

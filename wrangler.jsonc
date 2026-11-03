@@ -1,0 +1,27 @@
+
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bubbly-jump",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-03",
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/api/*"
+    ]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bubbly-jump-db",
+      "database_id": "23de5705-8035-49a4-b6e4-9299aaafcfcf"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}
